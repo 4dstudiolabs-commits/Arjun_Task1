@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
+import { WeatherService } from '../weather/weather.service';  // Assuming you have a weather service to fetch data
 
 export interface RowErrorDto {
   rowNumber: number;
@@ -8,12 +9,11 @@ export interface RowErrorDto {
 
 @Injectable()
 export class MeterExcelService {
+  constructor(private readonly weatherService: WeatherService) {}
+
   async parseAndValidate(fileBuffer: Buffer) {
     const workbook = new ExcelJS.Workbook();
-    
-    // Convert the fileBuffer to a Buffer
     const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
-
     await workbook.xlsx.load(buffer);
 
     const worksheet = workbook.getWorksheet(1);
@@ -24,24 +24,29 @@ export class MeterExcelService {
     const meterData: any[] = [];
     const errors: RowErrorDto[] = [];
 
-    worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber > 1) { // Skip header row
-        const data = {
-          date: row.getCell(1).text,
-          startTime: row.getCell(2).text,
-          stopTime: row.getCell(3).text,
-          exportReading: row.getCell(4).value,
-          importReading: row.getCell(5).value,
-        };
+    // Processing each row asynchronously
+    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
+      const row = worksheet.getRow(rowNumber);
+      const data = {
+        date: row.getCell(1).text,
+        startTime: row.getCell(2).text,
+        stopTime: row.getCell(3).text,
+        exportReading: row.getCell(4).value,
+        importReading: row.getCell(5).value,
+      };
 
-        const rowErrors = this.validateRow(data, rowNumber);
-        if (rowErrors.length > 0) {
-          errors.push({ rowNumber, errors: rowErrors });
-        } else {
-          meterData.push(data);
-        }
+      // Validate the row
+      const rowErrors = this.validateRow(data, rowNumber);
+      if (rowErrors.length > 0) {
+        errors.push({ rowNumber, errors: rowErrors });
+      } else {
+        // Fetch weather data to calculate Plant Start/Stop times
+        const times = await this.calculatePlantTimes(data.date);  // Await the calculation
+        data.startTime = times.startTime || data.startTime;
+        data.stopTime = times.stopTime || data.stopTime;
+        meterData.push(data);
       }
-    });
+    }
 
     return { meterData, errors };
   }
@@ -82,5 +87,27 @@ export class MeterExcelService {
   isValidTime(time: string) {
     const timePattern = /^\d{2}:\d{2}$/;
     return timePattern.test(time);
+  }
+
+  async calculatePlantTimes(date: string) {
+    const weatherData = await this.weatherService.getWeatherByDate(date);
+
+    if (!weatherData || weatherData.length === 0) {
+      return { startTime: '00:00', stopTime: '00:00' };
+    }
+
+    let plantStartTime = '00:00';
+    let plantStopTime = '00:00';
+
+    for (const weatherRow of weatherData) {
+      if (weatherRow.poa >= 10 && !plantStartTime) {
+        plantStartTime = weatherRow.time;  // First time POA ≥ 10 W/m²
+      }
+      if (weatherRow.poa > 0 && weatherRow.poa < 50) {
+        plantStopTime = weatherRow.time;  // Last time POA > 0 and < 50 W/m²
+      }
+    }
+
+    return { startTime: plantStartTime, stopTime: plantStopTime };
   }
 }

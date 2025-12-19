@@ -10,6 +10,9 @@ export class Meter {
 
   @Prop({ required: true })
   time: string;
+  
+  @Prop({ required: true })
+  plantStartTime: string;  // Plant Start Time, will be calculated
 
   @Prop({ default: 0 })
   activeEnergyImport: number;
@@ -38,5 +41,5 @@ export class Meter {
 
 export const MeterSchema = SchemaFactory.createForClass(Meter);
 
-// Prevent duplicate entries for same date+time
+// Prevent duplicate entries for the same date+time
 MeterSchema.index({ date: 1, time: 1 }, { unique: true });

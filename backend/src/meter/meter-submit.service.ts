@@ -1,14 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-
 import { Meter, MeterDocument } from './meter.schema';
+import { WeatherService } from '../weather/weather.service';  // Importing WeatherService
 
 @Injectable()
 export class MeterSubmitService {
   constructor(
-    @InjectModel(Meter.name)
-    private readonly meterModel: Model<MeterDocument>,
+    @InjectModel(Meter.name) private readonly meterModel: Model<MeterDocument>,
+    private readonly weatherService: WeatherService,  // Inject WeatherService
   ) {}
 
   async submitRows(rows: Record<string, any>[]) {
@@ -16,48 +16,48 @@ export class MeterSubmitService {
       throw new BadRequestException('rows must be an array');
     }
 
-    const ops = rows.map((r) => {
-      const date = String(r?.Date ?? r?.date ?? '').trim();
+    const ops = await Promise.all(
+      rows.map(async (r) => {
+        const date = String(r?.Date ?? r?.date ?? '').trim();
+        const time = String(r?.Time ?? r?.time ?? '00:00').trim();
 
-      // Your current schema REQUIRES time.
-      // Daily meter sheet usually won't have it, so we safely default.
-      const time = String(r?.Time ?? r?.time ?? '00:00').trim();
+        if (!date) {
+          throw new BadRequestException('Each row must contain Date');
+        }
 
-      if (!date) {
-        throw new BadRequestException('Each row must contain Date');
-      }
+        // Fetch Weather data for the given date
+        const weatherData = await this.weatherService.getWeatherByDate(date);  // Use the newly defined method
 
-      const doc: Partial<Meter> = {
-        date,
-        time,
-        // Optional numeric fields (support multiple header styles)
-        activeEnergyImport: this.num(r?.ActiveEnergyImport ?? r?.activeEnergyImport) ?? 0,
-        activeEnergyExport: this.num(r?.ActiveEnergyExport ?? r?.activeEnergyExport) ?? 0,
-        reactiveEnergyImport: this.num(r?.ReactiveEnergyImport ?? r?.reactiveEnergyImport) ?? 0,
-        reactiveEnergyExport: this.num(r?.ReactiveEnergyExport ?? r?.reactiveEnergyExport) ?? 0,
-        voltage: this.num(r?.Voltage ?? r?.voltage) ?? 0,
-        current: this.num(r?.Current ?? r?.current) ?? 0,
-        frequency: this.num(r?.Frequency ?? r?.frequency) ?? 0,
-        powerFactor: this.num(r?.PowerFactor ?? r?.powerFactor) ?? 0,
-      };
+        let plantStartTime = '00:00'; // Default value
+        for (const weatherRow of weatherData) {
+          if (weatherRow.poa >= 10) {
+            plantStartTime = weatherRow.time;  // First time POA >= 10 W/m²
+            break;
+          }
+        }
 
-      return {
-        updateOne: {
-          filter: { date: doc.date, time: doc.time },
-          update: { $set: doc },
-          upsert: true,
-        },
-      };
-    });
+        const doc: Partial<Meter> = {
+          date,
+          time,
+          plantStartTime,  // Add calculated Plant Start Time
+          activeEnergyImport: this.num(r?.ActiveEnergyImport ?? r?.activeEnergyImport) ?? 0,
+          activeEnergyExport: this.num(r?.ActiveEnergyExport ?? r?.activeEnergyExport) ?? 0,
+          // Other fields...
+        };
+
+        return {
+          updateOne: {
+            filter: { date: doc.date, time: doc.time },
+            update: { $set: doc },
+            upsert: true,
+          },
+        };
+      })
+    );
 
     const result = await this.meterModel.bulkWrite(ops, { ordered: false });
 
-    // Some driver typings don't expose acknowledged on BulkWriteResult
-    const acknowledged =
-      (result as unknown as { acknowledged?: boolean }).acknowledged ?? true;
-
     return {
-      acknowledged,
       insertedCount: result.insertedCount ?? 0,
       matchedCount: result.matchedCount ?? 0,
       modifiedCount: result.modifiedCount ?? 0,
