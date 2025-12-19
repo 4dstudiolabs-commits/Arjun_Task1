@@ -50,6 +50,51 @@ function IconMeter() {
   );
 }
 
+function IconList() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <path
+        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconUpload() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+      <path
+        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <polyline
+        points="17 8 12 3 7 8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <line
+        x1="12"
+        y1="3"
+        x2="12"
+        y2="15"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function IconDownload() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
@@ -87,9 +132,14 @@ function IconPulse() {
 export default function Sidebar() {
   const { pushToast } = useToast();
 
-  const nav: NavItem[] = [
-    { label: 'Weather Upload', to: '/weather/upload', icon: <IconWeather /> },
-    { label: 'Meter Upload', to: '/meter/upload', icon: <IconMeter /> },
+  const weatherNav: NavItem[] = [
+    { label: 'Upload Excel', to: '/weather/upload', icon: <IconUpload /> },
+    { label: 'View Records', to: '/weather/list', icon: <IconList /> },
+  ];
+
+  const meterNav: NavItem[] = [
+    { label: 'Upload Excel', to: '/meter/upload', icon: <IconUpload /> },
+    { label: 'View Records', to: '/meter/list', icon: <IconList /> },
   ];
 
   const downloadWeatherTemplate = () => {
@@ -102,16 +152,12 @@ export default function Sidebar() {
 
   const checkApiHealth = async () => {
     try {
-      // Preferred: if you have a health endpoint like /health, it will work.
-      // Fallback: try a lightweight existing endpoint.
       const candidates = [apiUrl('/health'), apiUrl('/weather/template')];
 
       let ok = false;
       for (const u of candidates) {
-        // Use HEAD to avoid downloading template
         const res = await fetch(u, { method: 'HEAD' });
         if (res.ok || res.status === 405) {
-          // 405 Method Not Allowed still confirms server is reachable
           ok = true;
           break;
         }
@@ -139,6 +185,26 @@ export default function Sidebar() {
     }
   };
 
+  const renderNavItems = (items: NavItem[]) =>
+    items.map((item) => (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        className={({ isActive }) =>
+          classNames(
+            'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+            'text-slate-700 hover:bg-slate-100 hover:text-slate-900',
+            'dark:text-slate-200 dark:hover:bg-slate-900/60 dark:hover:text-slate-50',
+            isActive &&
+              'bg-slate-100 text-slate-900 dark:bg-slate-900/70 dark:text-slate-50',
+          )
+        }
+      >
+        <span className="opacity-90">{item.icon}</span>
+        <span>{item.label}</span>
+      </NavLink>
+    ));
+
   return (
     <aside className="w-[280px] shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       {/* Brand */}
@@ -153,29 +219,22 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="px-3">
-        <div className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Data Import
+        {/* Weather Section */}
+        <div className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          <IconWeather />
+          Weather
+        </div>
+        <div className="flex flex-col gap-1 mb-4">
+          {renderNavItems(weatherNav)}
         </div>
 
-        <div className="flex flex-col gap-1">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                classNames(
-                  'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
-                  'text-slate-700 hover:bg-slate-100 hover:text-slate-900',
-                  'dark:text-slate-200 dark:hover:bg-slate-900/60 dark:hover:text-slate-50',
-                  isActive &&
-                    'bg-slate-100 text-slate-900 dark:bg-slate-900/70 dark:text-slate-50',
-                )
-              }
-            >
-              <span className="opacity-90">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+        {/* Meter Section */}
+        <div className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          <IconMeter />
+          Meter
+        </div>
+        <div className="flex flex-col gap-1 mb-4">
+          {renderNavItems(meterNav)}
         </div>
 
         {/* Templates */}

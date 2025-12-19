@@ -7,7 +7,9 @@ import Sidebar from './components/layout/Sidebar';
 
 // Pages
 import WeatherUploadPage from './pages/Weather/WeatherUploadPage';
+import WeatherListPage from './pages/Weather/WeatherListPage';
 import MeterUploadPage from './pages/Meter/MeterUploadPage';
+import MeterListPage from './pages/Meter/MeterListPage';
 
 function App() {
   return (
@@ -24,9 +26,11 @@ function App() {
 
                   {/* Weather */}
                   <Route path="/weather/upload" element={<WeatherUploadPage />} />
+                  <Route path="/weather/list" element={<WeatherListPage />} />
 
                   {/* Meter */}
                   <Route path="/meter/upload" element={<MeterUploadPage />} />
+                  <Route path="/meter/list" element={<MeterListPage />} />
 
                   {/* Fallback */}
                   <Route

@@ -14,20 +14,50 @@ interface RowError {
 }
 
 interface UploadResponse {
-  data: Record<string, any>[];
+  rows: Record<string, any>[];
   errors: RowError[];
   isValid: boolean;
 }
 
 interface ValidateResponse {
+  rows: Record<string, any>[];
   errors: RowError[];
   isValid: boolean;
 }
 
 interface SubmitResponse {
-  inserted: number;
-  skipped: number;
-  message: string;
+  acknowledged: boolean;
+  insertedCount: number;
+  matchedCount: number;
+  modifiedCount: number;
+  upsertedCount: number;
+}
+
+/**
+ * Normalize errors from backend
+ */
+function normalizeErrors(input: any): RowError[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((e: any) => {
+      if (typeof e?.rowNumber === 'number' && Array.isArray(e?.errors)) {
+        return { rowNumber: e.rowNumber, errors: e.errors };
+      }
+      if (typeof e?.rowIndex === 'number' && Array.isArray(e?.messages)) {
+        return { rowNumber: e.rowIndex, errors: e.messages };
+      }
+      return null;
+    })
+    .filter(Boolean) as RowError[];
+}
+
+/**
+ * Normalize data from backend
+ */
+function normalizeData(input: any): Record<string, any>[] {
+  if (Array.isArray(input)) return input;
+  return [];
 }
 
 type LoadingPhase = 'idle' | 'upload' | 'validate' | 'submit';
@@ -60,7 +90,7 @@ export default function MeterUploadPage() {
     phase === 'upload'
       ? 'Reading the file and converting it into rows.'
       : phase === 'validate'
-      ? 'Checking schema rules and highlighting issues.'
+      ? 'Checking schema rules and calculating fields.'
       : phase === 'submit'
       ? 'Saving valid rows and skipping duplicates.'
       : 'Please wait.';
@@ -88,26 +118,34 @@ export default function MeterUploadPage() {
         body: formData,
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'Upload failed');
+      }
 
-      const result: UploadResponse = await res.json();
+      const result: any = await res.json();
 
-      setData(result.data);
-      setErrors(result.errors);
-      setIsValid(result.isValid);
+      const normalizedData = normalizeData(result?.rows ?? result?.data);
+      const normalizedErrors = normalizeErrors(result?.errors);
+
+      setData(normalizedData);
+      setErrors(normalizedErrors);
+
+      const valid = typeof result?.isValid === 'boolean' ? result.isValid : normalizedErrors.length === 0;
+      setIsValid(valid);
 
       pushToast({
-        type: result.isValid ? 'success' : 'info',
-        title: result.isValid ? 'Upload validated' : 'Upload needs fixes',
-        message: result.isValid
+        type: valid ? 'success' : 'info',
+        title: valid ? 'Upload validated' : 'Upload needs fixes',
+        message: valid
           ? 'All rows are valid. You can submit to the database.'
-          : `${result.errors.length} row(s) have validation issues. Edit and re-validate.`,
+          : `${normalizedErrors.length} row(s) have validation issues. Edit and re-validate.`,
       });
-    } catch {
+    } catch (err: any) {
       pushToast({
         type: 'error',
         title: 'Upload failed',
-        message: 'Could not upload/validate the file. Please try again.',
+        message: err?.message || 'Could not upload/validate the file. Please try again.',
       });
     } finally {
       setLoading(false);
@@ -147,25 +185,39 @@ export default function MeterUploadPage() {
         body: JSON.stringify({ rows: data }),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'Validation failed');
+      }
 
-      const result: ValidateResponse = await res.json();
+      const result: any = await res.json();
 
-      setErrors(result.errors);
-      setIsValid(result.isValid);
+      // Validation endpoint returns enriched rows with auto-calculated fields
+      const enrichedRows = normalizeData(result?.rows ?? result?.data);
+      const normalizedErrors = normalizeErrors(result?.errors);
+
+      // Update data with enriched rows (includes Plant Start/Stop Time, Totals, etc.)
+      if (enrichedRows.length > 0) {
+        setData(enrichedRows);
+      }
+
+      setErrors(normalizedErrors);
+
+      const valid = typeof result?.isValid === 'boolean' ? result.isValid : normalizedErrors.length === 0;
+      setIsValid(valid);
 
       pushToast({
-        type: result.isValid ? 'success' : 'info',
-        title: result.isValid ? 'Validation passed' : 'Validation failed',
-        message: result.isValid
-          ? 'All rows are valid. You can submit now.'
-          : `${result.errors.length} row(s) still have issues.`,
+        type: valid ? 'success' : 'info',
+        title: valid ? 'Validation passed' : 'Validation failed',
+        message: valid
+          ? 'All rows are valid. Auto-calculated fields have been added. You can submit now.'
+          : `${normalizedErrors.length} row(s) still have issues.`,
       });
-    } catch {
+    } catch (err: any) {
       pushToast({
         type: 'error',
         title: 'Re-validation failed',
-        message: 'Could not validate the edited data. Please try again.',
+        message: err?.message || 'Could not validate the edited data. Please try again.',
       });
     } finally {
       setLoading(false);
@@ -202,26 +254,31 @@ export default function MeterUploadPage() {
         body: JSON.stringify({ rows: data }),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || 'Submit failed');
+      }
 
       const result: SubmitResponse = await res.json();
       setSuccess(result);
 
+      const totalAffected = (result.insertedCount ?? 0) + (result.upsertedCount ?? 0) + (result.modifiedCount ?? 0);
+
       pushToast({
         type: 'success',
         title: 'Submitted successfully',
-        message: `${result.inserted} inserted, ${result.skipped} skipped.`,
+        message: `${totalAffected} record(s) saved to database.`,
       });
 
       setData([]);
       setErrors([]);
       setIsValid(false);
       setFile(null);
-    } catch {
+    } catch (err: any) {
       pushToast({
         type: 'error',
         title: 'Submission failed',
-        message: 'Could not submit to database. Please try again.',
+        message: err?.message || 'Could not submit to database. Please try again.',
       });
     } finally {
       setLoading(false);
@@ -270,6 +327,9 @@ export default function MeterUploadPage() {
       {data.length > 0 && (
         <div className="surface p-6">
           <h3 className="mb-4">Preview & Edit Data</h3>
+          <p className="text-sm text-text-muted mb-4">
+            Auto-calculated fields (Plant Start/Stop Time, Totals, GSS values) will be added after validation.
+          </p>
           <EditablePreviewTable data={data} errors={errors} onCellChange={handleCellChange} />
         </div>
       )}
@@ -295,9 +355,11 @@ export default function MeterUploadPage() {
       {success && (
         <div className="surface p-6">
           <h3 className="mb-2 text-success">Submission Successful</h3>
-          <p className="text-sm">
-            {success.inserted} records inserted, {success.skipped} skipped.
-          </p>
+          <div className="text-sm space-y-1">
+            <p>Inserted: {success.insertedCount ?? 0}</p>
+            <p>Updated: {success.modifiedCount ?? 0}</p>
+            <p>Upserted: {success.upsertedCount ?? 0}</p>
+          </div>
         </div>
       )}
     </div>

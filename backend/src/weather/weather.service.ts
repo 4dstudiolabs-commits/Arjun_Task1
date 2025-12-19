@@ -9,6 +9,13 @@ import { Weather, WeatherDocument } from './schemas/weather.schema';
 import { CreateWeatherDto } from './dto/create-weather.dto';
 import { UpdateWeatherDto } from './dto/update-weather.dto';
 
+interface FindAllOptions {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  skip?: number;
+}
+
 @Injectable()
 export class WeatherService {
   constructor(
@@ -26,7 +33,7 @@ export class WeatherService {
     try {
       const createdWeather = new this.weatherModel(createWeatherDto);
       return await createdWeather.save();
-    } catch (error) {
+    } catch (error: any) {
       // Duplicate date + time error
       if (error.code === 11000) {
         throw new ConflictException(
@@ -37,9 +44,35 @@ export class WeatherService {
     }
   }
 
-  // READ ALL
+  // READ ALL (original method - kept for backward compatibility)
   async findAll(): Promise<Weather[]> {
     return this.weatherModel.find().sort({ date: 1, time: 1 }).exec();
+  }
+
+  // READ ALL with filters
+  async findAllWithFilters(options: FindAllOptions = {}): Promise<{ data: Weather[]; total: number }> {
+    const { startDate, endDate, limit = 100, skip = 0 } = options;
+
+    const filter: Record<string, any> = {};
+
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = startDate;
+      if (endDate) filter.date.$lte = endDate;
+    }
+
+    const [data, total] = await Promise.all([
+      this.weatherModel
+        .find(filter)
+        .sort({ date: -1, time: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.weatherModel.countDocuments(filter).exec(),
+    ]);
+
+    return { data, total };
   }
 
   // READ ONE
@@ -49,6 +82,15 @@ export class WeatherService {
       throw new NotFoundException('Weather record not found');
     }
     return weather;
+  }
+
+  // READ by date
+  async findByDate(date: string): Promise<Weather[]> {
+    return this.weatherModel
+      .find({ date })
+      .sort({ time: 1 })
+      .lean()
+      .exec();
   }
 
   // UPDATE
@@ -70,7 +112,7 @@ export class WeatherService {
       }
 
       return updatedWeather;
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 11000) {
         throw new ConflictException(
           'Duplicate date and time not allowed',
@@ -87,5 +129,11 @@ export class WeatherService {
       throw new NotFoundException('Weather record not found');
     }
     return { message: 'Weather record deleted successfully' };
+  }
+
+  // DELETE MANY
+  async removeMany(ids: string[]): Promise<{ deletedCount: number }> {
+    const result = await this.weatherModel.deleteMany({ _id: { $in: ids } }).exec();
+    return { deletedCount: result.deletedCount ?? 0 };
   }
 }
