@@ -1,12 +1,6 @@
-import {
-  BadRequestException,
-  Controller,
-  Post,
-  UploadedFile,
-  UseInterceptors,
-} from '@nestjs/common';
+import { BadRequestException, Controller, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { WeatherExcelService } from './weather-excel.service';
+import { WeatherExcelService, RowErrorDto } from './weather-excel.service';  // Import RowErrorDto
 
 @Controller('weather/upload')
 export class WeatherUploadController {
@@ -14,8 +8,9 @@ export class WeatherUploadController {
 
   @Post()
   @UseInterceptors(FileInterceptor('file'))
-  uploadWeatherExcel(@UploadedFile() file: Express.Multer.File) {
+  async uploadWeatherExcel(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Excel file is required');
-    return this.excelService.parseAndValidate(file.buffer);
+    const { weatherData, errors }: { weatherData: any[], errors: RowErrorDto[] } = await this.excelService.parseAndValidate(file.buffer);
+    return { weatherData, errors };
   }
 }
