@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===============================
+   Global Base Styles
+   =============================== */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg-light text-text-light font-sans antialiased;
+}
+
+.dark body {
+  @apply bg-bg-dark text-text-dark;
+}
+
+/* ===============================
+   Typography (Enterprise-friendly)
+   =============================== */
+
+h1 {
+  @apply text-2xl font-semibold tracking-tight;
+}
+
+h2 {
+  @apply text-xl font-semibold tracking-tight;
+}
+
+h3 {
+  @apply text-lg font-medium;
+}
+
+p {
+  @apply text-sm leading-relaxed text-text-muted;
+}
+
+/* ===============================
+   Scrollbar Styling (Professional)
+   =============================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.25);
+}
+
+/* ===============================
+   Utility Classes
+   =============================== */
+
+.surface {
+  @apply bg-surface-light border border-border-light shadow-soft rounded-lg;
+}
+
+.dark .surface {
+  @apply bg-surface-dark border-border-dark shadow-darkSoft;
+}
+
+.divider {
+  @apply border-t border-border-light;
+}
+
+.dark .divider {
+  @apply border-border-dark;
+}
+
+/* ===============================
+   Button Reset (for GSAP buttons)
+   =============================== */
+
+button {
+  outline: none;
+}
+
+button:focus-visible {
+  @apply ring-2 ring-primary ring-offset-2 ring-offset-bg-light;
+}
+
+.dark button:focus-visible {
+  @apply ring-offset-bg-dark;
+}
