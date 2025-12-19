@@ -266,7 +266,7 @@ export default function EditablePreviewTable({
                   : 'border-slate-300 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800'
               )}
             >
-              Next →
+              Next → 
             </button>
 
             {/* Last Page */}

@@ -49,6 +49,7 @@ const METER_FIELDS = [
   { key: 'frequency', label: 'Frequency (Hz)', type: 'number' as const, required: false, min: 0 },
   { key: 'powerFactor', label: 'Power Factor', type: 'number' as const, required: false, min: 0, max: 1, step: 0.01 },
 ];
+
 export default function MeterListPage() {
   const { pushToast } = useToast();
 
@@ -161,6 +162,17 @@ export default function MeterListPage() {
     setShowDeleteModal(true);
   };
 
+  // **Sort Data** to show records with errors first
+  const sortedData = data.sort((a, b) => {
+    // Check if record a has errors and b does not (error rows should come first)
+    const aHasError = a?.activeEnergyImport < 0; // You can modify this to check specific error fields
+    const bHasError = b?.activeEnergyImport < 0;
+
+    if (aHasError && !bHasError) return -1;
+    if (!aHasError && bHasError) return 1;
+    return 0;
+  });
+
   return (
     <div className="flex flex-col gap-6">
       <LoadingOverlay show={loading} title="Loading data..." />
@@ -183,7 +195,7 @@ export default function MeterListPage() {
         </div>
 
         <DataTable
-          data={data}
+          data={sortedData} // Use the sorted data
           columns={METER_COLUMNS}
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}

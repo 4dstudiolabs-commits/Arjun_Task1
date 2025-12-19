@@ -37,7 +37,8 @@ function normalizeErrors(input: any): RowError[] {
       }
       return null;
     })
-    .filter(Boolean) as RowError[];
+    .filter((e): e is RowError => e !== null) // Ensure null values are excluded
+    .sort((a, b) => a.rowNumber - b.rowNumber); // Ensure sorting by rowNumber
 }
 
 /**
@@ -61,6 +62,7 @@ export default function MeterUploadPage() {
   const [phase, setPhase] = useState<LoadingPhase>('idle');
   const [success, setSuccess] = useState<SubmitResponse | null>(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showOnlyErrors, setShowOnlyErrors] = useState(false); // Track whether to show only errors
 
   const downloadTemplate = () => {
     window.open(apiUrl('/meter/template'), '_blank');
@@ -290,6 +292,9 @@ export default function MeterUploadPage() {
     }
   };
 
+  // Show only errors when the user clicks "Show Errors"
+  const filteredData = showOnlyErrors ? data.filter((_, index) => errors.some((error) => error.rowNumber === index + 1)) : data;
+
   return (
     <div className="flex flex-col gap-6">
       <LoadingOverlay show={loading} title={overlayTitle} subtitle={overlaySubtitle} />
@@ -343,7 +348,7 @@ export default function MeterUploadPage() {
             {/* Show Errors Button */}
             {errors.length > 0 && (
               <button
-                onClick={() => setShowErrorModal(true)}
+                onClick={() => setShowOnlyErrors(!showOnlyErrors)} // Toggle between showing errors or all rows
                 className="flex items-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -364,7 +369,7 @@ export default function MeterUploadPage() {
             )}
           </div>
 
-          <EditablePreviewTable data={data} errors={errors} onCellChange={handleCellChange} />
+          <EditablePreviewTable data={filteredData} errors={errors} onCellChange={handleCellChange} />
         </div>
       )}
 
