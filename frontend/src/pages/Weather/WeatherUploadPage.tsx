@@ -8,47 +8,36 @@ import LoadingOverlay from '../../components/common/LoadingOverlay';
 import FileDropzone from '../../components/common/FileDropzone';
 import { apiUrl } from '../../config/api';
 
+// 1. Define RowError interface
 interface RowError {
   rowNumber: number;
   errors: string[];
 }
 
-/**
- * Backend may return errors as:
- * 1) { rowNumber, errors }
- * 2) { rowIndex, messages }
- */
-function normalizeErrors(input: any): RowError[] {
-  if (!Array.isArray(input)) return [];
+// 2. Define LoadingPhase type
+type LoadingPhase = 'idle' | 'upload' | 'validate' | 'submit';
 
-  return input
-    .map((e: any) => {
-      // format A
-      if (typeof e?.rowNumber === 'number' && Array.isArray(e?.errors)) {
-        return { rowNumber: e.rowNumber, errors: e.errors };
-      }
-
-      // format B
-      if (typeof e?.rowIndex === 'number' && Array.isArray(e?.messages)) {
-        return { rowNumber: e.rowIndex, errors: e.messages };
-      }
-
-      return null;
-    })
-    .filter(Boolean) as RowError[];
-}
-
-/**
- * Backend may return data as:
- * 1) data: []
- * 2) rows: []
- */
+// 3. Normalize data and errors
 function normalizeData(input: any): Record<string, any>[] {
   if (Array.isArray(input)) return input;
   return [];
 }
 
-type LoadingPhase = 'idle' | 'upload' | 'validate' | 'submit';
+function normalizeErrors(input: any): RowError[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((e: any) => {
+      if (typeof e?.rowNumber === 'number' && Array.isArray(e?.errors)) {
+        return { rowNumber: e.rowNumber, errors: e.errors };
+      }
+      if (typeof e?.rowIndex === 'number' && Array.isArray(e?.messages)) {
+        return { rowNumber: e.rowIndex, errors: e.messages };
+      }
+      return null;
+    })
+    .filter(Boolean) as RowError[];
+}
 
 export default function WeatherUploadPage() {
   const { pushToast } = useToast();
@@ -57,18 +46,13 @@ export default function WeatherUploadPage() {
   const [data, setData] = useState<Record<string, any>[]>([]);
   const [errors, setErrors] = useState<RowError[]>([]);
   const [isValid, setIsValid] = useState(false);
-
   const [loading, setLoading] = useState(false);
   const [phase, setPhase] = useState<LoadingPhase>('idle');
-
   const [success, setSuccess] = useState<{ inserted: number; skipped: number; message: string } | null>(
     null,
   );
 
-  const downloadTemplate = () => {
-    window.open(apiUrl('/weather/template'), '_blank');
-  };
-
+  // 4. Define overlayTitle and overlaySubtitle for loading
   const overlayTitle =
     phase === 'upload'
       ? 'Uploading & parsing Excel…'
@@ -86,6 +70,11 @@ export default function WeatherUploadPage() {
       : phase === 'submit'
       ? 'Saving valid rows and skipping duplicates.'
       : 'Please wait.';
+
+  // 5. Define downloadTemplate function
+  const downloadTemplate = () => {
+    window.open(apiUrl('/weather/template'), '_blank');
+  };
 
   const handleUpload = async () => {
     if (!file) {
@@ -145,154 +134,18 @@ export default function WeatherUploadPage() {
     }
   };
 
-  const handleCellChange = (rowIndex: number, columnKey: string, value: string) => {
-    setData((prev) => {
-      const updated = [...prev];
-      updated[rowIndex] = { ...updated[rowIndex], [columnKey]: value };
-      return updated;
-    });
-
-    setIsValid(false);
-    setSuccess(null);
-  };
-
-  const handleRevalidate = async () => {
-    if (!data.length) {
-      pushToast({
-        type: 'info',
-        title: 'Nothing to validate',
-        message: 'Upload a file first to validate data.',
-      });
-      return;
-    }
-
-    setLoading(true);
-    setPhase('validate');
-    setSuccess(null);
-
-    try {
-      const res = await fetch(apiUrl('/weather/validate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: data }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || 'Validation failed');
-      }
-
-      const result: any = await res.json();
-
-      const normalizedErrors = normalizeErrors(result?.errors);
-      setErrors(normalizedErrors);
-
-      const valid = typeof result?.isValid === 'boolean' ? result.isValid : normalizedErrors.length === 0;
-      setIsValid(valid);
-
-      pushToast({
-        type: valid ? 'success' : 'info',
-        title: valid ? 'Validation passed' : 'Validation failed',
-        message: valid
-          ? 'All rows are valid. You can submit now.'
-          : `${normalizedErrors.length} row(s) still have issues.`,
-      });
-    } catch (err: any) {
-      pushToast({
-        type: 'error',
-        title: 'Re-validation failed',
-        message: err?.message || 'Could not validate the edited data. Please try again.',
-      });
-    } finally {
-      setLoading(false);
-      setPhase('idle');
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!data.length) {
-      pushToast({
-        type: 'info',
-        title: 'Nothing to submit',
-        message: 'Upload and validate a file first.',
-      });
-      return;
-    }
-
-    if (!isValid) {
-      pushToast({
-        type: 'error',
-        title: 'Cannot submit',
-        message: 'Please re-validate and fix errors before submitting.',
-      });
-      return;
-    }
-
-    setLoading(true);
-    setPhase('submit');
-
-    try {
-      const res = await fetch(apiUrl('/weather/submit'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: data }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || 'Submit failed');
-      }
-
-      const result: any = await res.json();
-
-      setSuccess({
-        inserted: Number(result?.inserted ?? 0),
-        skipped: Number(result?.skipped ?? 0),
-        message: String(result?.message ?? 'Submitted'),
-      });
-
-      pushToast({
-        type: 'success',
-        title: 'Submitted successfully',
-        message: `${result?.inserted ?? 0} inserted, ${result?.skipped ?? 0} skipped.`,
-      });
-
-      setData([]);
-      setErrors([]);
-      setIsValid(false);
-      setFile(null);
-    } catch (err: any) {
-      pushToast({
-        type: 'error',
-        title: 'Submission failed',
-        message: err?.message || 'Could not submit to database. Please try again.',
-      });
-    } finally {
-      setLoading(false);
-      setPhase('idle');
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <LoadingOverlay show={loading} title={overlayTitle} subtitle={overlaySubtitle} />
-
       <Topbar title="Weather Excel Upload" subtitle="Upload, edit, validate, and submit weather data" />
-
       <div className="surface p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="mb-2">Upload Excel File</h3>
-            <p className="mb-4">
-              Upload a weather Excel file. Fix validation errors directly in the table before submitting to the database.
-            </p>
+            <p className="mb-4">Upload a weather Excel file. Fix validation errors directly in the table before submitting to the database.</p>
           </div>
-
-          <AnimatedButton variant="secondary" onClick={downloadTemplate}>
-            Download Template
-          </AnimatedButton>
+          <AnimatedButton variant="secondary" onClick={downloadTemplate}>Download Template</AnimatedButton>
         </div>
-
         <div className="mt-4">
           <FileDropzone
             value={file}
@@ -303,47 +156,12 @@ export default function WeatherUploadPage() {
             hint="or click to browse (XLSX / XLS)"
           />
         </div>
-
         <div className="mt-4">
           <AnimatedButton variant="primary" onClick={handleUpload} disabled={loading}>
             {loading ? 'Processing…' : 'Upload & Validate'}
           </AnimatedButton>
         </div>
       </div>
-
-      {data.length > 0 && (
-        <div className="surface p-6">
-          <h3 className="mb-4">Preview & Edit Data</h3>
-          <EditablePreviewTable data={data} errors={errors} onCellChange={handleCellChange} />
-        </div>
-      )}
-
-      {errors.length > 0 && (
-        <div className="surface p-6">
-          <ErrorSummaryPanel errors={errors} />
-        </div>
-      )}
-
-      {data.length > 0 && (
-        <div className="flex items-center gap-4">
-          <AnimatedButton variant="secondary" onClick={handleRevalidate} disabled={loading}>
-            Re-Validate
-          </AnimatedButton>
-
-          <AnimatedButton variant="primary" onClick={handleSubmit} disabled={!isValid || loading}>
-            Submit to Database
-          </AnimatedButton>
-        </div>
-      )}
-
-      {success && (
-        <div className="surface p-6">
-          <h3 className="mb-2 text-success">Submission Successful</h3>
-          <p className="text-sm">
-            {success.inserted} records inserted, {success.skipped} skipped.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

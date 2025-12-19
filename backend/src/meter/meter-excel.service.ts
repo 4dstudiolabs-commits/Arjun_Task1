@@ -1,57 +1,84 @@
 import { Injectable } from '@nestjs/common';
-import * as ExcelJS from 'exceljs';
-import { WeatherService } from '../weather/weather.service';  // Assuming you have a weather service to fetch data
+import * as XLSX from 'xlsx'; // Ensure XLSX (SheetJS) is imported correctly
+import { WeatherService } from '../weather/weather.service'; // Assuming you have a weather service to fetch data
 
 export interface RowErrorDto {
   rowNumber: number;
   errors: string[];
 }
 
+// Define a type for row data structure
+export interface MeterData {
+  date: string;
+  startTime: string;
+  stopTime: string;
+  exportReading: number;
+  importReading: number;
+}
+
 @Injectable()
 export class MeterExcelService {
   constructor(private readonly weatherService: WeatherService) {}
 
-  async parseAndValidate(fileBuffer: Buffer) {
-    const workbook = new ExcelJS.Workbook();
-    const buffer = Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(fileBuffer);
-    await workbook.xlsx.load(buffer);
-
-    const worksheet = workbook.getWorksheet(1);
-    if (!worksheet) {
-      throw new Error('Worksheet not found.');
-    }
-
-    const meterData: any[] = [];
+  async parseAndValidate(fileBuffer: Buffer | Uint8Array) {
+    let weatherData: MeterData[] = [];
     const errors: RowErrorDto[] = [];
 
-    // Processing each row asynchronously
-    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
-      const row = worksheet.getRow(rowNumber);
-      const data = {
-        date: row.getCell(1).text,
-        startTime: row.getCell(2).text,
-        stopTime: row.getCell(3).text,
-        exportReading: row.getCell(4).value,
-        importReading: row.getCell(5).value,
-      };
+    try {
+      // Read the workbook using SheetJS
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
 
-      // Validate the row
-      const rowErrors = this.validateRow(data, rowNumber);
-      if (rowErrors.length > 0) {
-        errors.push({ rowNumber, errors: rowErrors });
-      } else {
-        // Fetch weather data to calculate Plant Start/Stop times
-        const times = await this.calculatePlantTimes(data.date);  // Await the calculation
-        data.startTime = times.startTime || data.startTime;
-        data.stopTime = times.stopTime || data.stopTime;
-        meterData.push(data);
+      console.log('Workbook loaded successfully.');
+
+      // Pick the first sheet from the workbook
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+
+      if (!worksheet) {
+        throw new Error('Worksheet not found.');
       }
+
+      // Convert worksheet to JSON data (skip header row)
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false });
+
+      console.log('Worksheet loaded:', sheetName);
+      console.log('Total rows in the worksheet:', jsonData.length);
+
+      // Process each row (skip header row)
+      for (let index = 1; index < jsonData.length; index++) {
+        const row = jsonData[index] as any[];  // Cast row as an array (since each row is an array)
+
+        // Cast the row as MeterData
+        const data: MeterData = {
+          date: row[0],  // Adjust based on actual columns in your sheet
+          startTime: row[1],
+          stopTime: row[2],
+          exportReading: row[3],
+          importReading: row[4],
+        };
+
+        // Validate the row
+        const rowErrors = this.validateRow(data, index + 1); // Validate row, include rowNumber as index+1
+        if (rowErrors.length > 0) {
+          errors.push({ rowNumber: index + 1, errors: rowErrors });
+        } else {
+          // Fetch weather data to calculate Plant Start/Stop times
+          const times = await this.calculatePlantTimes(data.date);  // Await the calculation
+          data.startTime = times.startTime || data.startTime;
+          data.stopTime = times.stopTime || data.stopTime;
+          weatherData.push(data);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading workbook:', error);
+      throw new Error('Error loading workbook.');
     }
 
-    return { meterData, errors };
+    return { meterData: weatherData, errors };
   }
 
-  validateRow(data: any, rowNumber: number) {
+  // Row validation
+  validateRow(data: MeterData, rowNumber: number) {
     const errors: string[] = [];
 
     // Date and Time Format validation
@@ -79,16 +106,19 @@ export class MeterExcelService {
     return errors;
   }
 
+  // Date format validation (DD-MM-YYYY)
   isValidDate(date: string) {
     const datePattern = /^\d{2}-\d{2}-\d{4}$/;
     return datePattern.test(date);
   }
 
+  // Time format validation (HH:MM)
   isValidTime(time: string) {
     const timePattern = /^\d{2}:\d{2}$/;
     return timePattern.test(time);
   }
 
+  // Function to calculate Plant Start/Stop times based on weather data
   async calculatePlantTimes(date: string) {
     const weatherData = await this.weatherService.getWeatherByDate(date);
 
@@ -99,6 +129,7 @@ export class MeterExcelService {
     let plantStartTime = '00:00';
     let plantStopTime = '00:00';
 
+    // Loop through weather data and calculate start/stop times based on POA values
     for (const weatherRow of weatherData) {
       if (weatherRow.poa >= 10 && !plantStartTime) {
         plantStartTime = weatherRow.time;  // First time POA ≥ 10 W/m²

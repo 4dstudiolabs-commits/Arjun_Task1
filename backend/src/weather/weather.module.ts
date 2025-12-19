@@ -6,7 +6,7 @@ import { Weather, WeatherSchema } from './schemas/weather.schema';
 import { WeatherController } from './weather.controller';
 import { WeatherService } from './weather.service';
 
-import { WeatherUploadController } from './weather-upload.controller';
+import { WeatherUploadController } from './weather-upload.controller';  // Import the controller
 import { WeatherValidateController } from './weather-validate.controller';
 import { WeatherSubmitController } from './weather-submit.controller';
 import { WeatherTemplateController } from './weather-template.controller';
@@ -21,7 +21,7 @@ import { WeatherExcelService } from './weather-excel.service'; // ✅ add
   ],
   controllers: [
     WeatherController,
-    WeatherUploadController,
+    WeatherUploadController,  // Ensure this is included in the controllers array
     WeatherValidateController,
     WeatherSubmitController,
     WeatherTemplateController,
