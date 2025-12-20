@@ -5,7 +5,7 @@ import { Weather, WeatherDocument } from './schemas/weather.schema';
 
 @Injectable()
 export class WeatherService {
-  constructor(@InjectModel(Weather.name) private weatherModel: Model<WeatherDocument>) {}
+  constructor(@InjectModel(Weather.name) private weatherModel: Model<WeatherDocument>) { }
 
   async create(createWeatherDto: any) {
     const createdWeather = new this.weatherModel(createWeatherDto);
@@ -24,34 +24,58 @@ export class WeatherService {
     return this.weatherModel.find({ date }).exec();
   }
 
-  // This is the new method
+  // This is the new method - handles multiple date formats
   async getWeatherByDate(date: string) {
-    const formattedDate = this.formatDate(date); // Normalize the date format
+    // Get all possible date format variations to search for
+    const dateVariations = this.getDateVariations(date);
+
     const weatherData = await this.weatherModel.find({
-      $or: [
-        { date: formattedDate },
-        { Date: formattedDate }, // Check both 'date' and 'Date' fields in case of format differences
-      ],
-    }).exec();
+      $or: dateVariations.flatMap(d => [
+        { date: d },
+        { Date: d },
+      ]),
+    }).lean().exec();
 
     return weatherData;
   }
 
-  private formatDate(date: string) {
-    // Add logic here to format the date to the standard format if necessary
-    // Example: Normalize 'DD-MMM-YY' to 'YYYY-MM-DD' if required
+  // Generate all possible date format variations for a given date
+  private getDateVariations(date: string): string[] {
+    const variations: string[] = [date]; // Always include original
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    // Check if the date is already in 'DD-MMM-YY' or 'YYYY-MM-DD' format and return the normalized one.
-    const datePattern = /^\d{2}-[A-Za-z]{3}-\d{2}$/; // Check for 'DD-MMM-YY'
-    if (datePattern.test(date)) {
-      // Convert 'DD-MMM-YY' to 'YYYY-MM-DD'
-      const [day, month, year] = date.split('-');
-      const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(month);
-      const formattedDate = `20${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      return formattedDate;
+    // Try to parse DD-MM-YYYY format (meter format)
+    const ddmmyyyyMatch = date.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (ddmmyyyyMatch) {
+      const [, day, month, year] = ddmmyyyyMatch;
+      const monthIndex = parseInt(month, 10) - 1;
+      if (monthIndex >= 0 && monthIndex < 12) {
+        // Convert to DD-MMM-YY (weather format)
+        const monthName = MONTHS[monthIndex];
+        const shortYear = year.slice(-2);
+        variations.push(`${day}-${monthName}-${shortYear}`);
+        // Also add ISO format YYYY-MM-DD
+        variations.push(`${year}-${month}-${day}`);
+      }
     }
 
-    return date; // If already in 'YYYY-MM-DD' format, return as is
+    // Try to parse DD-MMM-YY format (weather format)
+    const ddmmmyyMatch = date.match(/^(\d{2})-([A-Za-z]{3})-(\d{2})$/);
+    if (ddmmmyyMatch) {
+      const [, day, monthName, shortYear] = ddmmmyyMatch;
+      const monthIndex = MONTHS.findIndex(m => m.toLowerCase() === monthName.toLowerCase());
+      if (monthIndex >= 0) {
+        const fullYear = `20${shortYear}`;
+        const month = String(monthIndex + 1).padStart(2, '0');
+        // Convert to DD-MM-YYYY (meter format)
+        variations.push(`${day}-${month}-${fullYear}`);
+        // Also add ISO format YYYY-MM-DD
+        variations.push(`${fullYear}-${month}-${day}`);
+      }
+    }
+
+    // Remove duplicates
+    return [...new Set(variations)];
   }
 
   async update(id: string, updateWeatherDto: any) {
